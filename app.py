@@ -26,14 +26,16 @@ AIR_QUALITY_API_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
 
 BASE_MET_FEATURES = ['temperature_2m', 'relative_humidity_2m', 'precipitation', 'wind_u', 'wind_v']
 
+# Tự động tạo thư mục log để tránh lỗi thư mục không tồn tại trên Cloud
+os.makedirs('forecast_logs', exist_ok=True)
 
 def download_model_from_drive():
     """Tự động tải mô hình từ Google Drive nếu chưa tồn tại"""
     if not os.path.exists(MODEL_PATH):
         with st.spinner('Đang tải mô hình AI từ Google Drive (200MB)... Vui lòng đợi trong giây lát.'):
-            url = f'https://drive.google.com/uc?id={GOOGLE_DRIVE_FILE_ID}'
             try:
-                gdown.download(url, MODEL_PATH, quiet=False)
+                # [FIX LỖI 1]: Dùng id trực tiếp và tham số fuzzy=True để vượt qua cảnh báo quét Virus của Google
+                gdown.download(id=GOOGLE_DRIVE_FILE_ID, output=MODEL_PATH, quiet=False, fuzzy=True)
                 st.success("Đã tải xong mô hình!")
             except Exception as e:
                 st.error(f"Lỗi khi tải mô hình từ Drive: {e}")
@@ -43,8 +45,6 @@ def download_model_from_drive():
 @st.cache_resource
 def load_model_and_scaler():
     """Tải siêu mô hình AI và tái tạo bộ chuẩn hóa cho 23 biến"""
-
-    # Tải mô hình từ Google Drive
     download_model_from_drive()
 
     try:
@@ -52,7 +52,6 @@ def load_model_and_scaler():
             st.error("Mô hình hoặc dữ liệu gốc chưa sẵn sàng. Vui lòng đảm bảo đã tải mô hình và dữ liệu đúng cách.")
             return None, None, None
             
-        # VÁ LỖI TẠI ĐÂY: Giải nén Dictionary
         model_data = joblib.load(MODEL_PATH)
         model = model_data['model']
         feature_names = model_data['feature_names']
@@ -67,12 +66,10 @@ def load_model_and_scaler():
         df_raw['wind_u'] = -df_raw['wind_speed_10m'] * np.sin(wind_dir_rad)
         df_raw['wind_v'] = -df_raw['wind_speed_10m'] * np.cos(wind_dir_rad)
         
-        # Tạo biến tích lũy (Rolling Features) cho dữ liệu gốc để fit Scaler
         for feature in BASE_MET_FEATURES:
             df_raw[f'{feature}_rolling_12h'] = df_raw[feature].rolling(window=12, min_periods=1).mean()
             df_raw[f'{feature}_rolling_24h'] = df_raw[feature].rolling(window=24, min_periods=1).mean()
             
-        # Loại bỏ các dòng bị NaN do rolling
         df_raw = df_raw.dropna()
         
         scaler = MinMaxScaler()
@@ -137,10 +134,8 @@ with col_btn:
                 st.session_state['env_data'] = data
                 st.success("Cập nhật thành công!")
 with col_time:
-    # [SỬA LỖI TẠI ĐÂY]
     vn_tz = pytz.timezone('Asia/Bangkok')
     current_time_vn = datetime.now(vn_tz).strftime('%H:%M - %d/%m/%Y')
-    
     st.info(f"Giờ hệ thống: {current_time_vn} (Đồng bộ: Asia/Bangkok)")
 
 base_data = st.session_state['env_data']
@@ -184,15 +179,12 @@ if st.button("Chạy Mô Hình Dự đoán bụi mịn PM 2.5 hiện tại", typ
                 'wind_u': wind_u_val, 'wind_v': wind_v_val
             }
             
-            # TỰ ĐỘNG TẠO 10 BIẾN TÍCH LŨY: Giả lập thời tiết này duy trì suốt 24h qua
             for feature in BASE_MET_FEATURES:
                 val = input_dict[feature]
                 input_dict[f'{feature}_rolling_12h'] = val
                 input_dict[f'{feature}_rolling_24h'] = val
                 
             df_input = pd.DataFrame([input_dict])
-            
-            # Sử dụng đúng feature_names để đảm bảo thứ tự cột 100% khớp với lúc Train
             df_input = df_input[feature_names] 
             df_input[feature_names] = scaler.transform(df_input[feature_names])
             
@@ -221,7 +213,6 @@ if st.button("Khởi Động Mô hình Dự báo 24h", use_container_width=True)
             df_24h = pd.merge(pd.DataFrame(requests.get(WEATHER_API_URL, params=w_params).json()['hourly']), pd.DataFrame(requests.get(AIR_QUALITY_API_URL, params=aq_params).json()['hourly']), on='time')
             df_24h['time'] = pd.to_datetime(df_24h['time'])
             
-            # Tính năng thời gian & lượng giác
             df_24h['hour'] = df_24h['time'].dt.hour
             df_24h['day_of_week'] = df_24h['time'].dt.dayofweek
             df_24h['month'] = df_24h['time'].dt.month
@@ -229,29 +220,24 @@ if st.button("Khởi Động Mô hình Dự báo 24h", use_container_width=True)
             df_24h['wind_u'] = -df_24h['wind_speed_10m'] * np.sin(wind_dir_rad)
             df_24h['wind_v'] = -df_24h['wind_speed_10m'] * np.cos(wind_dir_rad)
             
-            # TRÍCH XUẤT ĐẶC TRƯNG TÍCH LŨY TRÊN CHUỖI TƯƠNG LAI
             for feature in BASE_MET_FEATURES:
                 df_24h[f'{feature}_rolling_12h'] = df_24h[feature].rolling(window=12, min_periods=1).mean()
                 df_24h[f'{feature}_rolling_24h'] = df_24h[feature].rolling(window=24, min_periods=1).mean()
                 
-            # Lọc lấy 24h tương lai
             vn_tz = pytz.timezone('Asia/Bangkok')
             current_time = datetime.now(vn_tz).replace(tzinfo=None)
             df_24h = df_24h[df_24h['time'] >= current_time].head(24).reset_index(drop=True)
             
             df_24h_scaled = df_24h.copy()
-            df_24h_scaled = df_24h_scaled[feature_names] # Đảm bảo đúng 23 cột
+            df_24h_scaled = df_24h_scaled[feature_names] 
             df_24h_scaled[feature_names] = scaler.transform(df_24h_scaled[feature_names])
             
             df_24h['AI_Predicted_PM25'] = model.predict(df_24h_scaled)
 
-            # --- CHỈ CẦN THÊM ĐOẠN NÀY ĐỂ LƯU LOG ---
-            import os
-            os.makedirs('forecast_logs', exist_ok=True)
-            # Tên file có giờ phút để không bị trùng
             log_path = f"forecast_logs/forecast_{current_time.strftime('%Y-%m-%d_%Hh%M')}.csv"
             df_24h[['time', 'AI_Predicted_PM25']].to_csv(log_path, index=False)
-            # ----------------------------------------
+
+            st.success(f"Đã lưu thành công bản ghi vào thư mục: {log_path}")
             
             st.markdown("**1. Biểu đồ Nồng độ PM2.5 dự kiến (µg/m³)**")
             st.area_chart(df_24h.set_index('time')[['AI_Predicted_PM25']], color="#ff4b4b")
@@ -265,7 +251,6 @@ if st.button("Chạy Kiểm chứng 7 ngày qua", use_container_width=True):
     if model and scaler:
         with st.spinner("Đang xử lý hàm nhớ Rolling 24h và làm mượt biểu đồ..."):
             try:
-                # 1. Tải dữ liệu 8 ngày qua (1 ngày lấy đà cho rolling, 7 ngày để hiển thị)
                 w_params_past = {"latitude": LATITUDE, "longitude": LONGITUDE, "hourly": "temperature_2m,relative_humidity_2m,precipitation,wind_speed_10m,wind_direction_10m", "timezone": "Asia/Bangkok", "past_days": 8, "forecast_days": 0}
                 aq_params_past = {"latitude": LATITUDE, "longitude": LONGITUDE, "hourly": "pm2_5,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide,ozone,aerosol_optical_depth", "timezone": "Asia/Bangkok", "past_days": 8, "forecast_days": 0}
                 
@@ -274,7 +259,6 @@ if st.button("Chạy Kiểm chứng 7 ngày qua", use_container_width=True):
                                    on='time').dropna()
                 df_past['time'] = pd.to_datetime(df_past['time'])
                 
-                # Tiền xử lý gốc
                 df_past['hour'] = df_past['time'].dt.hour
                 df_past['day_of_week'] = df_past['time'].dt.dayofweek
                 df_past['month'] = df_past['time'].dt.month
@@ -282,24 +266,20 @@ if st.button("Chạy Kiểm chứng 7 ngày qua", use_container_width=True):
                 df_past['wind_u'] = -df_past['wind_speed_10m'] * np.sin(wind_dir_rad)
                 df_past['wind_v'] = -df_past['wind_speed_10m'] * np.cos(wind_dir_rad)
                 
-                # TRÍCH XUẤT ĐẶC TRƯNG TÍCH LŨY
                 for feature in BASE_MET_FEATURES:
                     df_past[f'{feature}_rolling_12h'] = df_past[feature].rolling(window=12, min_periods=1).mean()
                     df_past[f'{feature}_rolling_24h'] = df_past[feature].rolling(window=24, min_periods=1).mean()
                 
-                # Cắt bỏ 1 ngày đầu tiên, giữ lại đúng 7 ngày
                 vn_tz = pytz.timezone('Asia/Bangkok')
                 seven_days_ago = (datetime.now(vn_tz) - pd.Timedelta(days=7)).replace(tzinfo=None)
                 df_past = df_past[df_past['time'] >= seven_days_ago].reset_index(drop=True)
                 
-                # Dự báo
                 df_past_scaled = df_past.copy()
                 df_past_scaled = df_past_scaled[feature_names]
                 df_past_scaled[feature_names] = scaler.transform(df_past_scaled[feature_names])
                 
                 df_past['AI_Predicted_PM25'] = model.predict(df_past_scaled)
                 
-                # TÍNH TOÁN METRICS (Dựa trên dữ liệu gốc chưa làm mượt)
                 from sklearn.metrics import mean_absolute_error, mean_squared_error
                 y_true = df_past['pm2_5'].values
                 y_pred = df_past['AI_Predicted_PM25'].values
@@ -311,7 +291,6 @@ if st.button("Chạy Kiểm chứng 7 ngày qua", use_container_width=True):
                 ioa_7days = 1 - (np.sum((y_pred - y_true)**2) / np.sum((np.abs(y_pred - mean_obs) + np.abs(y_true - mean_obs))**2))
                 nmb_7days = np.sum(y_pred - y_true) / np.sum(y_true)
                 
-                # Hiển thị Bảng Metrics
                 st.markdown("#### 📐 Bảng đánh giá độ chính xác toán học chuyên sâu")
                 m1, m2, m3, m4, m5 = st.columns(5)
                 m1.metric("MAE (Sai số)", f"{mae_7days:.2f} µg/m³")
@@ -320,23 +299,16 @@ if st.button("Chạy Kiểm chứng 7 ngày qua", use_container_width=True):
                 m4.metric("NMB (Độ lệch)", f"{nmb_7days:.4f}")
                 m5.metric("Đoán hụt đỉnh", f"- {max_under:.2f} µg/m³")
                 
-                # ==========================================
-                # KỸ THUẬT LÀM MƯỢT BIỂU ĐỒ (SMOOTHING)
-                # ==========================================
-                # Áp dụng hàm trung bình trượt 3 giờ để làm mượt đường cong dự báo
-                # df_past['AI_Smoothed'] = df_past['AI_Predicted_PM25'].rolling(window=3, center=True, min_periods=1).mean()
-                # Không áp dụng làm mượt nữa
                 df_past['AI_Smoothed'] = df_past['AI_Predicted_PM25']
                 
                 st.markdown("#### 📈 Đối chiếu Thực tế và Dự báo")
                 st.caption("Đường dự báo của AI đã được áp dụng bộ lọc làm mượt (Smoothing) để thể hiện xu hướng trực quan hơn.")
                 
-                # Vẽ biểu đồ Plotly tinh gọn (Đã bỏ phần chọn biến phụ)
                 fig = go.Figure()
                 fig.add_trace(go.Scatter(x=df_past['time'], y=df_past['pm2_5'], name="Thực tế (Vệ tinh)", 
                                          line=dict(color="#1f77b4", width=2.5)))
                 fig.add_trace(go.Scatter(x=df_past['time'], y=df_past['AI_Smoothed'], name="AI Mô phỏng (Đã làm mượt)", 
-                                         line=dict(color="#ff4b4b", width=2.5, shape='spline'))) # shape='spline' giúp bo tròn các góc
+                                         line=dict(color="#ff4b4b", width=2.5, shape='spline'))) 
                 
                 fig.update_layout(
                     title_text="Đồ thị Nồng độ PM2.5", 
@@ -361,7 +333,6 @@ import glob
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 if st.button("Quét & Kiểm tra Log Dự Báo", type="primary"):
-    # Tìm tất cả file CSV, nhưng BỎ QUA các file đã có chữ '_done'
     pending_files = [f for f in glob.glob('forecast_logs/forecast_*.csv') if '_done' not in f]
     
     if not pending_files:
@@ -371,22 +342,18 @@ if st.button("Quét & Kiểm tra Log Dự Báo", type="primary"):
             file_name = os.path.basename(file_path)
             st.markdown(f"**Đang xử lý:** `{file_name}`")
             
-            # Đọc log AI dự báo
             df_log = pd.read_csv(file_path)
             df_log['time'] = pd.to_datetime(df_log['time'])
             
-            # Lấy mốc thời gian
             end_time = df_log['time'].max()
 
             vn_tz = pytz.timezone('Asia/Bangkok')
             current_time = datetime.now(vn_tz).replace(tzinfo=None)
             
-            # LOGIC: CHƯA TỚI GIỜ THÌ BÁO VÀ BỎ QUA KHÔNG CHẠY FILE NÀY
             if current_time < end_time:
                 st.warning(f"Chưa đủ 24h! Cần chờ qua thời điểm **{end_time.strftime('%H:%M ngày %d/%m')}** để vệ tinh đo được thực tế.")
                 continue
                 
-            # LOGIC: ĐÃ QUA THỜI GIAN -> KÉO THỰC TẾ
             start_date_str = df_log['time'].min().strftime('%Y-%m-%d')
             end_date_str = end_time.strftime('%Y-%m-%d')
             
@@ -402,7 +369,6 @@ if st.button("Quét & Kiểm tra Log Dự Báo", type="primary"):
                     df_actual['time'] = pd.to_datetime(df_actual['time'])
                     df_actual = df_actual.rename(columns={'pm2_5': 'Actual_PM25'})
                     
-                    # Gộp dự báo và thực tế lại
                     df_eval = pd.merge(df_log, df_actual, on='time', how='inner')
                     df_eval_clean = df_eval.dropna() 
                     
@@ -410,22 +376,18 @@ if st.button("Quét & Kiểm tra Log Dự Báo", type="primary"):
                         st.error("Dữ liệu vệ tinh tại khung giờ này chưa sẵn sàng. Thử lại sau.")
                         continue
                     
-                    # Tính điểm toán học
                     mae = mean_absolute_error(df_eval_clean['Actual_PM25'], df_eval_clean['AI_Predicted_PM25'])
                     rmse = np.sqrt(mean_squared_error(df_eval_clean['Actual_PM25'], df_eval_clean['AI_Predicted_PM25']))
                     
-                    # GHI ĐÈ FILE (Thêm cột thực tế) VÀ ĐỔI TÊN THÀNH _DONE
                     done_file_path = file_path.replace('.csv', '_done.csv')
                     df_eval_clean.to_csv(done_file_path, index=False)
-                    os.remove(file_path) # Xóa file cũ đi
+                    os.remove(file_path) 
                     
-                    # Hiển thị kết quả ra màn hình
                     c1, c2, c3 = st.columns(3)
                     c1.metric("MAE (Sai số)", f"{mae:.2f} µg/m³")
                     c2.metric("RMSE", f"{rmse:.2f} µg/m³")
                     c3.metric("Trạng thái", "Đã kiểm tra xong")
                     
-                    # Vẽ cái biểu đồ so sánh cho VIP
                     fig = go.Figure()
                     fig.add_trace(go.Scatter(x=df_eval_clean['time'], y=df_eval_clean['Actual_PM25'], name="Thực tế", line=dict(color="blue", width=2)))
                     fig.add_trace(go.Scatter(x=df_eval_clean['time'], y=df_eval_clean['AI_Predicted_PM25'], name="AI Dự báo", line=dict(color="red", width=2, dash='dot')))
