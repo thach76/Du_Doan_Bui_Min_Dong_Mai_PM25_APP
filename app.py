@@ -6,6 +6,7 @@ import requests
 import joblib
 from datetime import datetime
 import pytz
+import gdown
 from sklearn.preprocessing import MinMaxScaler
 import os
 import plotly.graph_objects as go
@@ -17,6 +18,7 @@ st.set_page_config(page_title="Hệ thống Cảnh báo PM2.5 - KCN Đông Mai",
 LATITUDE = 21.0050
 LONGITUDE = 106.8333
 MODEL_PATH = 'ensemble_model_pm25.pkl'
+GOOGLE_DRIVE_FILE_ID = '1sfpQJkLjHvj3HhRznGIpz0GfV6fo2_UV'  # ID của file trên Google Drive
 RAW_DATA_PATH = 'data_dongmai_all_raw.csv'
 
 WEATHER_API_URL = "https://api.open-meteo.com/v1/forecast"
@@ -24,13 +26,30 @@ AIR_QUALITY_API_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
 
 BASE_MET_FEATURES = ['temperature_2m', 'relative_humidity_2m', 'precipitation', 'wind_u', 'wind_v']
 
+
+def download_model_from_drive():
+    """Tự động tải mô hình từ Google Drive nếu chưa tồn tại"""
+    if not os.path.exists(MODEL_PATH):
+        with st.spinner('Đang tải mô hình AI từ Google Drive (200MB)... Vui lòng đợi trong giây lát.'):
+            url = f'https://drive.google.com/uc?id={GOOGLE_DRIVE_FILE_ID}'
+            try:
+                gdown.download(url, MODEL_PATH, quiet=False)
+                st.success("Đã tải xong mô hình!")
+            except Exception as e:
+                st.error(f"Lỗi khi tải mô hình từ Drive: {e}")
+
 # 3. CORE FUNCTIONS
 
 @st.cache_resource
 def load_model_and_scaler():
     """Tải siêu mô hình AI và tái tạo bộ chuẩn hóa cho 23 biến"""
+
+    # Tải mô hình từ Google Drive
+    download_model_from_drive()
+
     try:
         if not os.path.exists(MODEL_PATH) or not os.path.exists(RAW_DATA_PATH):
+            st.error("Mô hình hoặc dữ liệu gốc chưa sẵn sàng. Vui lòng đảm bảo đã tải mô hình và dữ liệu đúng cách.")
             return None, None, None
             
         # VÁ LỖI TẠI ĐÂY: Giải nén Dictionary
