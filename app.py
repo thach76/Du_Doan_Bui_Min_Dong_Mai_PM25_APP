@@ -236,7 +236,7 @@ if st.button("Khởi Động Mô hình Dự báo 24h", use_container_width=True)
                 
             # Lọc lấy 24h tương lai
             vn_tz = pytz.timezone('Asia/Bangkok')
-            current_time = datetime.now(vn_tz)
+            current_time = datetime.now(vn_tz).replace(tzinfo=None)
             df_24h = df_24h[df_24h['time'] >= current_time].head(24).reset_index(drop=True)
             
             df_24h_scaled = df_24h.copy()
@@ -377,7 +377,9 @@ if st.button("Quét & Kiểm tra Log Dự Báo", type="primary"):
             
             # Lấy mốc thời gian
             end_time = df_log['time'].max()
-            current_time = datetime.now(vn_tz)
+
+            vn_tz = pytz.timezone('Asia/Bangkok')
+            current_time = datetime.now(vn_tz).replace(tzinfo=None)
             
             # LOGIC: CHƯA TỚI GIỜ THÌ BÁO VÀ BỎ QUA KHÔNG CHẠY FILE NÀY
             if current_time < end_time:
