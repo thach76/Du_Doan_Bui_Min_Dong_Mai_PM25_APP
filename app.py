@@ -289,7 +289,7 @@ if st.button("Chạy Kiểm chứng 7 ngày qua", use_container_width=True):
                 
                 # Cắt bỏ 1 ngày đầu tiên, giữ lại đúng 7 ngày
                 vn_tz = pytz.timezone('Asia/Bangkok')
-                seven_days_ago = datetime.now(vn_tz) - pd.Timedelta(days=7)
+                seven_days_ago = (datetime.now(vn_tz) - pd.Timedelta(days=7)).replace(tzinfo=None)
                 df_past = df_past[df_past['time'] >= seven_days_ago].reset_index(drop=True)
                 
                 # Dự báo
