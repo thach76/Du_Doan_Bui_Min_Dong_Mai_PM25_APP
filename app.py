@@ -32,7 +32,7 @@ os.makedirs('forecast_logs', exist_ok=True)
 def download_model_from_drive():
     """Tự động tải mô hình từ Google Drive nếu chưa tồn tại"""
     if not os.path.exists(MODEL_PATH):
-        with st.spinner('Đang tải mô hình AI từ Google Drive (200MB)... Vui lòng đợi trong giây lát.'):
+        with st.spinner('Đang tải mô hình từ Google Drive (200MB)... Vui lòng đợi trong giây lát.'):
             try:
                 # [FIX LỖI 1]: Dùng id trực tiếp và tham số fuzzy=True để vượt qua cảnh báo quét Virus của Google
                 gdown.download(id=GOOGLE_DRIVE_FILE_ID, output=MODEL_PATH, quiet=False, fuzzy=True)
@@ -44,7 +44,7 @@ def download_model_from_drive():
 
 @st.cache_resource
 def load_model_and_scaler():
-    """Tải siêu mô hình AI và tái tạo bộ chuẩn hóa cho 23 biến"""
+    """Tải siêu mô hình và tái tạo bộ chuẩn hóa cho 23 biến"""
     download_model_from_drive()
 
     try:
@@ -122,7 +122,7 @@ if 'env_data' not in st.session_state:
         'hour': now.hour, 'day_of_week': now.weekday(), 'month': now.month
     }
 
-st.title("Hệ thống AI Mô phỏng & Dự báo PM2.5 KCN Đông Mai")
+st.title("Hệ thống tích hợp mô hình Mô phỏng & Dự báo PM2.5 KCN Đông Mai")
 st.markdown("---")
 
 col_btn, col_time = st.columns([1, 3])
@@ -164,9 +164,9 @@ model, scaler, feature_names = load_model_and_scaler()
 
 if st.button("Chạy Mô Hình Dự đoán bụi mịn PM 2.5 hiện tại", type="primary"):
     if model is None or scaler is None:
-        st.error("Lỗi: Không thể tải mô hình AI.")
+        st.error("Lỗi: Không thể tải mô hình.")
     else:
-        with st.spinner("AI đang tính toán phản ứng hóa học & Tích lũy 24h..."):
+        with st.spinner("Mô hình đang tính toán phản ứng hóa học & Tích lũy 24h..."):
             wind_dir_rad = np.radians(wind_dir_in)
             wind_u_val = -wind_spd_in * np.sin(wind_dir_rad)
             wind_v_val = -wind_spd_in * np.cos(wind_dir_rad)
@@ -301,13 +301,12 @@ if st.button("Chạy Kiểm chứng 7 ngày qua", use_container_width=True):
                 
                 df_past['AI_Smoothed'] = df_past['AI_Predicted_PM25']
                 
-                st.markdown("#### 📈 Đối chiếu Thực tế và Dự báo")
-                st.caption("Đường dự báo của AI đã được áp dụng bộ lọc làm mượt (Smoothing) để thể hiện xu hướng trực quan hơn.")
+                st.markdown("#### Đối chiếu Thực tế và Dự báo")
                 
                 fig = go.Figure()
                 fig.add_trace(go.Scatter(x=df_past['time'], y=df_past['pm2_5'], name="Thực tế (Vệ tinh)", 
                                          line=dict(color="#1f77b4", width=2.5)))
-                fig.add_trace(go.Scatter(x=df_past['time'], y=df_past['AI_Smoothed'], name="AI Mô phỏng (Đã làm mượt)", 
+                fig.add_trace(go.Scatter(x=df_past['time'], y=df_past['AI_Smoothed'], name="Mô phỏng", 
                                          line=dict(color="#ff4b4b", width=2.5, shape='spline'))) 
                 
                 fig.update_layout(
@@ -390,7 +389,7 @@ if st.button("Quét & Kiểm tra Log Dự Báo", type="primary"):
                     
                     fig = go.Figure()
                     fig.add_trace(go.Scatter(x=df_eval_clean['time'], y=df_eval_clean['Actual_PM25'], name="Thực tế", line=dict(color="blue", width=2)))
-                    fig.add_trace(go.Scatter(x=df_eval_clean['time'], y=df_eval_clean['AI_Predicted_PM25'], name="AI Dự báo", line=dict(color="red", width=2, dash='dot')))
+                    fig.add_trace(go.Scatter(x=df_eval_clean['time'], y=df_eval_clean['AI_Predicted_PM25'], name="Mô hình mô phỏng", line=dict(color="red", width=2, dash='dot')))
                     fig.update_layout(title_text=f"Biểu đồ Đánh giá - {start_date_str}", hovermode="x unified", margin=dict(l=0, r=0, t=40, b=0))
                     st.plotly_chart(fig, use_container_width=True)
                     st.divider()
