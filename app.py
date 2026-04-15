@@ -36,11 +36,14 @@ def download_model_from_drive():
     if not os.path.exists(MODEL_PATH):
         with st.spinner('Đang tải mô hình từ Google Drive (200MB)... Vui lòng đợi trong giây lát.'):
             try:
-                # [ĐÃ FIX LỖI]: Bỏ tham số fuzzy=True vì chúng ta đã truyền trực tiếp id
+                # [ĐÃ SỬA]: Loại bỏ fuzzy=True để tương thích với gdown 5.x
+                # Chúng ta sử dụng id trực tiếp nên không cần tìm kiếm mờ (fuzzy)
                 gdown.download(id=GOOGLE_DRIVE_FILE_ID, output=MODEL_PATH, quiet=False)
                 st.success("Đã tải xong mô hình!")
             except Exception as e:
+                # Nếu file quá lớn hoặc bị Google chặn quét virus, gdown sẽ báo lỗi ở đây
                 st.error(f"Lỗi khi tải mô hình từ Drive: {e}")
+                st.info("Gợi ý: Nếu lỗi vẫn tiếp diễn, hãy thử kiểm tra lại quyền chia sẻ file trên Google Drive (Bất kỳ ai có liên kết đều có thể xem).")
 
 # 3. CORE FUNCTIONS
 
