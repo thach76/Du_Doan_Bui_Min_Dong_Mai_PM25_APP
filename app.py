@@ -11,6 +11,8 @@ from sklearn.preprocessing import MinMaxScaler
 import os
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 # 2. CONFIGURATIONS
 st.set_page_config(page_title="Hệ thống Cảnh báo PM2.5 - KCN Đông Mai", page_icon="🏭", layout="wide")
@@ -34,8 +36,8 @@ def download_model_from_drive():
     if not os.path.exists(MODEL_PATH):
         with st.spinner('Đang tải mô hình từ Google Drive (200MB)... Vui lòng đợi trong giây lát.'):
             try:
-                # [FIX LỖI 1]: Dùng id trực tiếp và tham số fuzzy=True để vượt qua cảnh báo quét Virus của Google
-                gdown.download(id=GOOGLE_DRIVE_FILE_ID, output=MODEL_PATH, quiet=False, fuzzy=True)
+                # [ĐÃ FIX LỖI]: Bỏ tham số fuzzy=True vì chúng ta đã truyền trực tiếp id
+                gdown.download(id=GOOGLE_DRIVE_FILE_ID, output=MODEL_PATH, quiet=False)
                 st.success("Đã tải xong mô hình!")
             except Exception as e:
                 st.error(f"Lỗi khi tải mô hình từ Drive: {e}")
@@ -82,13 +84,22 @@ def load_model_and_scaler():
     
 
 def fetch_current_environment_data():
-    """Truy xuất dữ liệu Môi trường Hiện tại"""
+    """Truy xuất dữ liệu Môi trường Hiện tại với cơ chế tự động thử lại (Retry)"""
     try:
+        # Thiết lập cơ chế tự động thử lại: Thử tối đa 3 lần, khoảng cách giữa các lần tăng dần
+        session = requests.Session()
+        retry = Retry(connect=3, backoff_factor=1) 
+        adapter = HTTPAdapter(max_retries=retry)
+        session.mount('http://', adapter)
+        session.mount('https://', adapter)
+        
         w_params = {"latitude": LATITUDE, "longitude": LONGITUDE, "current": "temperature_2m,relative_humidity_2m,precipitation,wind_speed_10m,wind_direction_10m", "timezone": "Asia/Bangkok"}
-        w_res = requests.get(WEATHER_API_URL, params=w_params).json()['current']
+        # Thêm timeout=10 (10 giây) để code không bị treo vĩnh viễn nếu đứt mạng
+        w_res = session.get(WEATHER_API_URL, params=w_params, timeout=10).json()['current']
         
         aq_params = {"latitude": LATITUDE, "longitude": LONGITUDE, "current": "pm2_5,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide,ozone,aerosol_optical_depth", "timezone": "Asia/Bangkok"}
-        aq_res = requests.get(AIR_QUALITY_API_URL, params=aq_params).json()['current']
+        aq_res = session.get(AIR_QUALITY_API_URL, params=aq_params, timeout=10).json()['current']
+        
         vn_tz = pytz.timezone('Asia/Bangkok')
         now = datetime.now(vn_tz)
         
@@ -100,8 +111,9 @@ def fetch_current_environment_data():
             'carbon_monoxide': float(aq_res['carbon_monoxide']), 'ozone': float(aq_res['ozone']), 'aerosol_optical_depth': float(aq_res['aerosol_optical_depth']),
             'hour': now.hour, 'day_of_week': now.weekday(), 'month': now.month
         }
-    except Exception as e:
-        st.error(f"Lỗi kết nối API: {e}")
+    except requests.exceptions.RequestException as e:
+        # Bắt lỗi chuẩn xác và in ra giao diện
+        st.error(f"Lỗi kết nối mạng hoặc API Open-Meteo không phản hồi: {e}")
         return None
 
 def convert_to_aqi_vn(pm25_val):
