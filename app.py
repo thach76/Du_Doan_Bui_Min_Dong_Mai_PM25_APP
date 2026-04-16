@@ -119,12 +119,22 @@ def fetch_current_environment_data():
         st.error(f"Lỗi kết nối mạng hoặc API Open-Meteo không phản hồi: {e}")
         return None
 
+
 def convert_to_aqi_vn(pm25_val):
-    if pm25_val <= 25.0: return pm25_val * (50/25), "TỐT", "Không ảnh hưởng tới sức khỏe. Tự do hoạt động.", "success", "🟢"
-    elif pm25_val <= 50.0: return 50 + (pm25_val - 25) * (50/25), "TRUNG BÌNH", "Nhóm nhạy cảm hạn chế ở ngoài trời lâu.", "warning", "🟡"
-    elif pm25_val <= 80.0: return 100 + (pm25_val - 50) * (50/30), "KÉM", "Người bình thường bắt đầu bị ảnh hưởng. Nên đeo khẩu trang.", "warning", "🟠"
-    elif pm25_val <= 150.0: return 150 + (pm25_val - 80) * (50/70), "XẤU", "Tất cả mọi người bị ảnh hưởng. Hạn chế ra ngoài.", "error", "🔴"
-    else: return 200 + (pm25_val - 150), "RẤT XẤU", "Cảnh báo khẩn cấp. Mọi người ở trong nhà.", "error", "🟣"
+    if pm25_val <= 25.0: 
+        return pm25_val * (50/25), "TỐT", "Không ảnh hưởng tới sức khỏe. Tự do hoạt động.", "success", "🟢"
+    elif pm25_val <= 50.0: 
+        return 50 + (pm25_val - 25) * (50/25), "TRUNG BÌNH", "Nhóm nhạy cảm hạn chế ở ngoài trời lâu.", "warning", "🟡"
+    elif pm25_val <= 80.0: 
+        return 100 + (pm25_val - 50) * (50/30), "KÉM", "Người bình thường bắt đầu bị ảnh hưởng. Nên đeo khẩu trang.", "warning", "🟠"
+    elif pm25_val <= 150.0: 
+        return 150 + (pm25_val - 80) * (50/70), "XẤU", "Tất cả mọi người bị ảnh hưởng. Hạn chế ra ngoài.", "error", "🔴"
+    # --- ĐOẠN SỬA ĐỔI MỚI TẠI ĐÂY ---
+    elif pm25_val <= 250.0: 
+        return 200 + (pm25_val - 150) * (100/100), "RẤT XẤU", "Cảnh báo khẩn cấp. Mọi người ở trong nhà.", "error", "🟣"
+    else: 
+        # Cấp độ cao nhất theo Quyết định 1459/QĐ-TCMT
+        return 300 + (pm25_val - 250) * (200/100), "NGUY HẠI", "Tình trạng báo động. Cấm mọi hoạt động ngoài trời.", "error", "🟤"
 
 # 4. MAIN UI EXECUTION
 if 'env_data' not in st.session_state:
